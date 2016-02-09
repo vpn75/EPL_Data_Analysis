@@ -16,4 +16,5 @@ The CSV output has the following columns:
 *  **L** - Losses
 *  **GF** - Goals For
 *  **GA** - Goals Conceded
-*  **GD** - Goal Differential (May exclude in future as this is easily calculated)
+*  **GD** - Goal Differential (*May exclude in future as this is easily calculated*)
+*  **Year** - Beginning year of EPL season
