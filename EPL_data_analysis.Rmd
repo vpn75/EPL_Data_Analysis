@@ -1,0 +1,93 @@
+---
+title: "EPL Data Analysis"
+author: "Vamsi Nath"
+date: "February 17, 2016"
+output: 
+  html_document: 
+    css: style.css
+---
+
+```{r setup, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## EPL Data Analysis
+
+I'm a big soccer fan and have become fascinated with the history of the English Premier League (EPL). I also love stats and wanted to practice some of my newly acquired data science/R programming expertise by looking EPL historical table data.
+
+To start with, I wrote an R script to scrape Wikipedia for historical data and assemble into a dataframe for analysis. If you are interested, you can find the code on my [Github repository](http://github.com/vpn75/EPL_data_analysis).
+
+We'll begin by loading libraries followed by the data:
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+
+megatable <- read.csv("EPL_historical_table.csv", stringsAsFactors = FALSE)
+```
+
+Let's start by looking at a summary of our data:
+
+```{r}
+summary(megatable)
+```
+
+First thing that jumped out at me is the "Number of Games Played" indicated by the **Pld** column. The modern EPL I was familiar with features 20 teams with each team playing each other team both home and away. So I expected to see a uniform value of 38 games played here. After a little further research on Wikipedia, I learned that for the first 3 seasons, the EPL featured 22 teams which explains why we see a max of 42 games played in the summary.
+
+Another column that begs examination is **Pts**. The summary shows the max value as `r max(megatable$Pts)` which is clearly erroneous.
+
+Let's try and isolate the problem records with a simple **dplyr** filter:
+
+```{r}
+filter(megatable, Pts > 100)
+```
+
+OK, so what's going on here. Well after a bit of examination of the Wikipedia tables, I discovered that these entries have a subscript associated with them that was incorrectly being interpreted as part of the value.
+
+So we have a bit more cleanup to perform.
+
+Since only two records are affected and we know the bad values only appear once in the dataframe, I'm going to do use a simple text replace to fix the values:
+
+```{r}
+megatable$Pts <- sub("393", "39", megatable$Pts)
+megatable$Pts <- sub("191", "19", megatable$Pts)
+megatable$Pts <- as.numeric(megatable$Pts)
+```
+
+Now let's confirm the values have been fixed:
+
+```{r}
+summary(megatable$Pts)
+```
+
+OK that did it! Now let's continue on with our analysis.
+
+Next I'd like to look at the distribution of past champions so let's subset our data and build a simple histogram to visualize:
+
+```{r}
+champs <- filter(megatable, Pos == 1)
+
+#This function will arrange our histogram to show clubs in order of total EPL titles won
+reorder_size <- function(x) {
+  factor(x, levels = names(sort(table(x), decreasing = TRUE)))
+}
+
+
+#Plot EPL titles by club
+ggplot(data = champs, aes(reorder_size(Team))) + 
+  geom_bar(fill = c("red","midnightblue","firebrick","skyblue","black")) +
+  xlab("") +
+  ylab("Titles") +
+  ggtitle("Premier League Titles by Club")
+```
+
+No surprise to anyone who follows the EPL, that it has been dominated by Manchester United under Sir Alex Ferguson with 13 titles. 
+
+Here's a breakdown of Titles by Club:
+
+```{r}
+filter(megatable, Pos == 1) %>% group_by(Team) %>% tally %>% arrange(desc(n))
+```
+
+It is clear that the EPL is not an egalitarian competition being dominated by a few select clubs. Unlike in American sports, there is no salary cap or player draft that provides weaker teams a chance to acquire top players. 
+
