@@ -1,7 +1,7 @@
 ---
-title: "EPL Data Analysis"
+title: "Data Analysis of Historical English Premier League Table"
 author: "Vamsi Nath"
-date: "February 17, 2016"
+date: "April 18, 2016"
 output: 
   html_document: 
     css: style.css
@@ -11,15 +11,14 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## EPL Data Analysis
-
-I'm a big soccer fan and have become fascinated with the history of the English Premier League (EPL). I also love stats and wanted to practice some of my newly acquired data science/R programming expertise by looking EPL historical table data.
+I'm a big soccer(football) fan and have become fascinated with the history of the English Premier League (EPL). I also love stats and wanted to practice some of my newly acquired data science/R programming expertise by looking at EPL historical table data.
 
 To start with, I wrote an R script to scrape Wikipedia for historical data and assemble into a dataframe for analysis. If you are interested, you can find the code on my [Github repository](http://github.com/vpn75/EPL_data_analysis).
 
 We'll begin by loading libraries followed by the data:
 
 ```{r, warning=FALSE, message=FALSE}
+library(plyr)
 library(dplyr)
 library(ggplot2)
 
@@ -42,7 +41,7 @@ Let's try and isolate the problem records with a simple **dplyr** filter:
 filter(megatable, Pts > 100)
 ```
 
-OK, so what's going on here. Well after a bit of examination of the Wikipedia tables, I discovered that these entries have a subscript associated with them that was incorrectly being interpreted as part of the value.
+OK, so what's going on here. Well after a bit of examination of the Wikipedia tables, I discovered that these entries had a subscript associated with them that was incorrectly being interpreted as part of the value.
 
 So we have a bit more cleanup to perform.
 
@@ -61,6 +60,8 @@ summary(megatable$Pts)
 ```
 
 OK that did it! Now let's continue on with our analysis.
+
+###We Are the Champions!
 
 Next I'd like to look at the distribution of past champions so let's subset our data and build a simple histogram to visualize:
 
@@ -89,5 +90,138 @@ Here's a breakdown of Titles by Club:
 filter(megatable, Pos == 1) %>% group_by(Team) %>% tally %>% arrange(desc(n))
 ```
 
-It is clear that the EPL is not an egalitarian competition being dominated by a few select clubs. Unlike in American sports, there is no salary cap or player draft that provides weaker teams a chance to acquire top players. 
+We can see only a few select clubs have had the privilege of winning the Premier League. Only 4 clubs have won multiple EPL titles. Clubs like Chelsea and Manchester City have enjoyed recent success thanks to significant investment from their wealthy owners. Blackburn Rovers, the other lone winning club, was relegated in 2011 and have yet to regain promotion.
 
+Let's see if we can compare champions across the different EPL seasons to gauge their relative strength. To start we can look at champions that won the league with fewest and most points respectively.
+
+```{r}
+filter(champs, Pts %in% range(Pts)) %>% knitr::kable()
+```
+
+How else can we compare champions across seasons given the limited stats available in the historical league tables?
+
+One way we can go about this is to look at the relative strengths of each champion's closest competitors. We'll limit our comparison to the top 4 finishers each season calculating the Avg Pts and Goal-differential per season making use of the handy `ddply()` function from the `plyr` package.
+
+```{r}
+champs$T4Avg <- ddply(filter(megatable, Pos < 5), .(Year), summarise, Avg=round(mean(Pts)))[,2]
+champs$GDAvg <- ddply(filter(megatable, Pos < 5), .(Year), summarise, Avg=round(mean(GF-GA)))[,2]
+```
+
+Now we can calculate a relative Strength metric for each champion by computing the sum of the differences between their Points totals and Goal differential respectively with their competitors.
+
+```{r}
+mutate(champs, STR=(Pts-T4Avg)+((GF-GA)-GDAvg)) %>%
+select(-GD, -Pos) %>% 
+arrange(desc(STR)) %>% 
+top_n(10) %>% 
+knitr::kable()
+```
+
+The top two clearly stand out with a tie between the famous treble-winning Manchester United team and Jose Mourinho's 2004 team which finished with a record 95 points. The 2004 Chelsea team would probably get the nod for the overall top spot based on their superior Points total and Goal Differential.
+
+The 2011 Manchester City team which finished 3rd in our ranking is actually an interesting case because they won the league dramatically on the final match-day with a late winner by Sergio Aguero versus Queens Park Rangers. They won their championship on goal-differential after finishing even on points with Manchester United. That season City and United were so far ahead of their competitors that it afforded City a high Strength metric even though they actually won the league by the slimmest margin in EPL history. 
+
+Also interesting to see Arsenal's iconic Invincibles squad was ranked outside the top 5 largely due to the high number of games they drew that season. 
+
+###Domestic Royalty
+
+Another measure of success in the EPL is top 4 finishes that award a place in the prestigious and lucrative Champion's League competition. Let's see which teams have achieved the most top 4 finishes.
+
+First let's subset our data based on table position within the top 4 and start from the year the EPL switched to 20 teams.
+
+```{r}
+topfour <- megatable %>% filter(Pos < 5 & Year > 1994)
+```
+
+Now for a quick visualization to identify the most successful clubs.
+
+```{r}
+ggplot(data = topfour, aes(reorder_size(Team))) +
+  geom_bar(fill = "midnightblue") +
+  xlab("") +
+  ylab("Top 4 Finishes") +
+  theme(axis.text.x = element_text(angle=90))
+```
+
+No surprise to see Arsenal and Manchester United at the top. Liverpool have enjoyed 12 Top 4 finishes but have never reached the summit much to the chagrin of their supporters. Clubs like Newcastle United and Aston Villa have enjoyed success in the distant past but are no longer top 4 contenders. 
+
+###Goals Galore!
+
+The EPL is the most popular soccer league in the world and a big part of what makes the competition so exciting are the goals. Soccer is a low-scoring game making each goal an exciting and memorable moment in the matches. Let's see if we can spot any trends in number of goals scored between the seasons.
+
+We'll start by computing the sums of goals-scored per team across each season.
+
+```{r}
+totgoals <- filter(megatable, Year > 1994)  %>% group_by(Year)  %>% summarise(Tot = sum(GF))
+```
+
+From this summary, we can see the average number of goals per season is `r round(mean(totgoals$Tot))` with a standard deviation of `r round(sd(totgoals$Tot))`.
+
+Let's visualize the data with a histogram to see if we can spot any trends. The dashed line indicates the average number of total goals per EPL season.
+
+```{r, warning=FALSE}
+ggplot(data = totgoals, aes(x = as.numeric(Year), y = Tot)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_hline(yintercept = round(mean(totgoals$Tot)), linetype = 2) +
+  xlab("Year") +
+  ylab("Total Goals") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.9)) +
+  scale_x_continuous(breaks = seq(1995,2014)) +
+  ggtitle("Total Goals Scored per Season")
+```
+
+We can see that overall the total number of goals scored has not varied that much across EPL seasons. The seasons from 2009-2013 have been characterized by slightly above-average number of goals scored. The most recent 2014 season showed a slight drop in total goals though I'm not sure if that is attributable to anything in particular. It will be interesting to see if we start to see a trend of increasing goals scored with the influx of better attacking players owing partly to the growing affluence of the EPL.
+
+###COYG!
+
+I'm a huge [Arsenal](http://www.arsenalfc.com) fan so let's see what EPL historical table can tell us about how the club has performed to date. We already know that Arsenal has won 3 EPL titles and have enjoyed a league-best, 17 top 4 finishes.
+
+Let's look at the other end and see which years they performed poorly in.
+
+```{r}
+afc <- filter(megatable, Team == "Arsenal")
+filter(afc, Pos > 4)
+```
+
+So we see Arsenal have only finished outside the top 4 on three separate occasions. Their worst performances came early in EPL before Arsene Wenger arrived to take over from Bruce Rioch. 
+
+Arsenal have been known for their attractive, attacking style of football under Wenger so let's see how their number of goals scored has varied through their time in the EPL.
+
+```{r, warning=FALSE}
+ggplot(data = afc, aes(x = as.numeric(Year), y = GF)) +
+  geom_line(size = 2.0, alpha = 0.7, color = "firebrick") +
+  geom_point(size = 1.0) +
+  xlab("Year") + 
+  ylab("Goals Scored") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.9)) +
+  scale_x_continuous(breaks = seq(1992,2014)) +
+  ggtitle("Arsenal Goals Scored per Season")
+```
+
+We can see an immediate increase in goals following Wenger's arrival in 1997 leading to their peak in the 2004-05 season. Statistically, that may have been their best season but sadly they finished a distant second to a rampant Chelsea team under Jose Mourinho in his first season at Stamford Bridge.
+
+There was a sharp drop-off in goals following the 2005 season stemming from squad turnover due to the financial restraints imposed by the move from Highbury to the Emirates stadium. Arsenal fans have lamented the lack of proven goal-scorers like Henry and Van Persie in recent seasons. The additions of top-players like Ozil and Alexis have gone some way towards remedying that but the team is still a ways away from the offensive potency of early-2000s Wenger era.
+
+###Regional Rivals
+
+To make things a bit more interesting, looks look at a points comparison between Arsenal and their north-London rivals, Tottenham Hotspur.
+
+```{r}
+nld <- megatable %>% filter(Team %in% c("Arsenal", "Tottenham Hotspur"))
+
+ggplot(data = nld, aes(x = as.numeric(Year), y = Pts)) + 
+  geom_line(size = 2.0, alpha = 0.7, aes(color = Team)) +
+  geom_point(data = subset(nld, Pos == 1), size = 2.0, alpha = 0.7) +
+  scale_color_manual(values = c("firebrick","midnightblue")) +
+  xlab("Year") +
+  ylab("Points") +
+  ggtitle("Arsenal vs. Tottenham EPL Comparison")
+```
+
+Arsenal supporters everywhere take great delight in the fact that the club has not finished behind Spurs since 1994. They actually celebrate the day when it becomes mathematically impossible for Spurs to finish above Arsenal in the table known as [St. Totteringham's Day](http://www.chiark.greenend.org.uk/~mikepitt/totteringham.html). 
+
+We can see Arsenal enjoyed greatest ascendancy in their local rivalry during the early 2000's. The points on the graph indicate Arsenal's title-winning years which coincide with biggest points-differentials much to the chagrin of Spurs' fans no doubt!
+
+###Conclusion
+
+This concludes my analysis of EPL historical table. I found it to be a beneficial learning experience and improved my fluency with [R](https://www.r-project.org/) and visualization using [ggplot2](http://ggplot2.org). My next project will be delve into some more analysis of Arsenal this time using [Python](http://python.org) and [Jupyter notebooks](http://jupyter.org).
